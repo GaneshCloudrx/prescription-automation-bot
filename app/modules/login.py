@@ -385,10 +385,6 @@ def login_pioneer(shortcut_path, username, password):
     if not wait_for_main_window(timeout=config.TIMEOUT_MAIN_WINDOW):
         return False
     
-    # Step 7: Click Priority Fill Request
-    if not click_priority_fill_request():
-        return False
-    
     log_print("="*60)
     log_print("✓ Login Complete - Ready for automation")
     log_print("="*60)

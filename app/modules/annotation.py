@@ -1,11 +1,17 @@
 """
 Annotation Module
-Clicks the pencil/edit icon on the Edit Rx screen to open the annotation popup,
-types the annotation text from the API response, and saves/closes the popup.
+1. Click pencil icon on Edit Rx toolbar (mainToolStrip) — 75px from left
+2. "Annotate an Image" window opens
+3. Click "Add Note" icon on its toolbar (toolStrip1) — 10px from left
+4. Paste annotation text
+5. Click "Save F12" button (uxSave) on the Annotate window
+
 """
 import time
-import ctypes
+import subprocess
+from pywinauto.application import Application
 from pywinauto.keyboard import send_keys
+from pywinauto import mouse
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -15,27 +21,19 @@ from modules.app_cache import get_pioneer_app
 
 
 def _set_clipboard(text):
-    """Copy text to clipboard using Win32 API."""
-    CF_UNICODETEXT = 13
-    kernel32 = ctypes.windll.kernel32
-    user32 = ctypes.windll.user32
-    user32.OpenClipboard(0)
-    user32.EmptyClipboard()
-    data = text.encode("utf-16le") + b'\x00\x00'
-    h = kernel32.GlobalAlloc(0x0042, len(data))
-    p = kernel32.GlobalLock(h)
-    ctypes.memmove(p, data, len(data))
-    kernel32.GlobalUnlock(h)
-    user32.SetClipboardData(CF_UNICODETEXT, h)
-    user32.CloseClipboard()
+    """Copy text to clipboard using PowerShell Set-Clipboard."""
+    subprocess.run(
+        ["powershell", "-Command", f"Set-Clipboard -Value '{text}'"],
+        check=True, timeout=5
+    )
 
 
 def _clear_clipboard():
-    """Clear clipboard using Win32 API."""
-    user32 = ctypes.windll.user32
-    user32.OpenClipboard(0)
-    user32.EmptyClipboard()
-    user32.CloseClipboard()
+    """Clear clipboard using PowerShell."""
+    subprocess.run(
+        ["powershell", "-Command", "Set-Clipboard -Value ' '"],
+        timeout=5
+    )
 
 
 _app = None
@@ -54,8 +52,7 @@ def connect_to_pioneer():
 
 def add_annotation(annotation_text):
     """
-    Click the pencil/edit icon on the Edit Rx screen to open the annotation popup,
-    type the annotation text, and save/close the popup.
+    Open annotation window, click Add Note, type text, save.
 
     Args:
         annotation_text: The annotation text to enter (from API response)
@@ -73,79 +70,64 @@ def add_annotation(annotation_text):
         return False
 
     try:
+        # Pre-load clipboard BEFORE opening annotation window
+        _set_clipboard(annotation_text)
+        log_print("[ANNOTATION] Clipboard loaded with annotation text")
+
         window = _app.window(title_re=config.SELECTOR_EDIT_RX_FULL)
         window.wait("visible", timeout=config.TIMEOUT_ELEMENT_VISIBLE)
         window.set_focus()
         time.sleep(config.TIMEOUT_AFTER_CLICK)
 
-        # Click the pencil/edit icon to open annotation popup
-        # Try common auto_id patterns for annotation buttons
-        pencil_btn = None
-        for auto_id in ("uxAnnotationEdit", "uxEditAnnotation", "uxAnnotation", "uxNotes"):
-            try:
-                pencil_btn = window.child_window(auto_id=auto_id, control_type="Button")
-                if pencil_btn.exists(timeout=1):
-                    break
-                pencil_btn = None
-            except Exception:
-                pencil_btn = None
+        # Step 1: Click pencil icon on Edit Rx toolbar (75px from left edge)
+        toolbar = window.child_window(auto_id="mainToolStrip", control_type="ToolBar")
+        toolbar.wait("visible", timeout=config.TIMEOUT_ELEMENT_VISIBLE)
 
-        if pencil_btn is None:
-            # Fallback: search by title containing "annotation" or pencil-related text
-            for btn in window.descendants(control_type="Button"):
-                try:
-                    title = btn.window_text().strip().lower()
-                    if "annot" in title or "note" in title or "edit" in title:
-                        pencil_btn = btn
-                        break
-                except Exception:
-                    continue
+        rect = toolbar.rectangle()
+        pencil_x = rect.left + 75
+        pencil_y = (rect.top + rect.bottom) // 2
 
-        if pencil_btn is None:
-            log_print("[ANNOTATION] Pencil/edit icon not found — skipping annotation")
-            return False
+        mouse.click(coords=(pencil_x, pencil_y))
+        time.sleep(1.5)
+        log_print(f"[ANNOTATION] Pencil icon clicked at ({pencil_x}, {pencil_y})")
 
-        pencil_btn.click_input()
+        # Step 2: Find annotation toolbar inside the Edit Rx window
+        # Step 3: Click "Add Note" icon on annotation toolbar (10px from left edge)
+        note_toolbar = window.child_window(auto_id="toolStrip1", control_type="ToolBar")
+        note_toolbar.wait("visible", timeout=config.TIMEOUT_ELEMENT_VISIBLE)
+
+        note_rect = note_toolbar.rectangle()
+        note_x = note_rect.left + 20
+        note_y = (note_rect.top + note_rect.bottom) // 2
+
+        mouse.click(coords=(note_x, note_y))
         time.sleep(1)
-        log_print("[ANNOTATION] Pencil icon clicked — annotation popup opened")
+        log_print(f"[ANNOTATION] Add Note icon clicked at ({note_x}, {note_y})")
 
-        # Type annotation text in the popup
-        # The popup should now be the active window/dialog
-        try:
-            _set_clipboard(annotation_text)
-            send_keys("^v")
-        finally:
-            _clear_clipboard()
+        # Step 3: Directly Ctrl+V (clipboard already loaded)
+        send_keys("^v")
         time.sleep(config.TIMEOUT_AFTER_TYPE)
+        log_print(f"[ANNOTATION] Annotation text pasted: '{annotation_text[:60]}...'")
 
-        log_print(f"[ANNOTATION] Annotation text entered: '{annotation_text[:50]}...'")
+        # Step 4: Save annotation using F12 shortcut (avoids duplicate uxSave button issue)
+        send_keys("{F12}")
+        time.sleep(1)
+        log_print("[ANNOTATION] F12 Save pressed")
 
-        # Save and close the annotation popup
-        # Try clicking Save/OK button, or use keyboard shortcuts
-        try:
-            popup = window.child_window(title_re=".*Annotation.*|.*Note.*", control_type="Window")
-            if popup.exists(timeout=1):
-                save_btn = popup.child_window(title_re=".*Save.*|.*OK.*", control_type="Button")
-                if save_btn.exists(timeout=1):
-                    save_btn.click_input()
-                    time.sleep(0.5)
-                    log_print("[ANNOTATION] Annotation saved via button")
-                    return True
-        except Exception:
-            pass
-
-        # Fallback: Tab to OK/Save and press Enter
-        send_keys("{TAB}")
-        time.sleep(0.3)
-        send_keys("{ENTER}")
-        time.sleep(0.5)
-
-        log_print("[ANNOTATION] Annotation saved")
+        # Step 5: Handle "Save Image" popup — click Yes (Alt+Y)
+        send_keys("%y")
+        time.sleep(config.TIMEOUT_AFTER_CLICK)
+        log_print("[ANNOTATION] Save Image popup confirmed (Yes)")
         return True
 
     except Exception as e:
         log_print(f"[ANNOTATION] Failed to add annotation: {e}")
         return False
+    finally:
+        try:
+            _clear_clipboard()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 """
 Update Status API Module
-Calls update status endpoint for three outcomes: skipped, success, failed.
+Calls update status endpoint for three outcomes: skipped, completed, failed.
+Payload format: {"id": <int>, "status": "<status>", "remarks": "<details>"}
 """
 import base64
 import time
@@ -18,23 +19,19 @@ def _call_update_api(payload, max_retries=config.MAX_API_RETRIES):
     POST payload to the update status endpoint with retry logic.
 
     Args:
-        payload: dict with message_id, completed, remark, e1_look_up,
-                 new_patient_in_pionner, attachment
+        payload: dict with id, status, remarks
         max_retries: number of retry attempts
 
     Returns:
         bool: True if API acknowledged successfully
     """
-    if not payload.get("message_id"):
-        log_print("[UPDATE API] Skipped — no message_id available")
+    if not payload.get("id"):
+        log_print("[UPDATE API] Skipped — no id available")
         return False
 
-    auth_string = base64.b64encode(
-        f"{config.PORTAL_USERNAME}:{config.PORTAL_PASSWORD}".encode()
-    ).decode()
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Basic {auth_string}"
+        "Authorization": f"Basic {base64.b64encode(f'{config.PORTAL_USERNAME}:{config.PORTAL_PASSWORD}'.encode()).decode()}",
     }
 
     for attempt in range(max_retries):
@@ -44,6 +41,7 @@ def _call_update_api(payload, max_retries=config.MAX_API_RETRIES):
                 log_print(f"[UPDATE API] Retry {attempt + 1}/{max_retries} after {delay}s...")
                 time.sleep(delay)
 
+            log_print(f"[UPDATE API] Sending payload: {payload}")
             response = requests.post(
                 API_UPDATE_ENDPOINT, json=payload, headers=headers,
                 timeout=config.API_TIMEOUT
@@ -63,83 +61,60 @@ def _call_update_api(payload, max_retries=config.MAX_API_RETRIES):
     return False
 
 
-def update_skipped(message_id, remark="skipped", screenshot_path=None):
+def update_skipped(api_id, remarks="skipped", screenshot_path=None):
     """
-    Mark Rx as skipped (transferrable=0 or drug/compound not found).
+    Mark Rx as skipped.
 
     Args:
-        message_id: unique Rx identifier from xml_api response
-        remark:     reason for skipping
-        screenshot_path: path to screenshot PNG to attach (base64-encoded)
+        api_id: record id from prescription API response
+        remarks: reason for skipping
 
     Returns:
         bool: True if acknowledged
     """
-    attachment = ""
-    if screenshot_path and os.path.exists(screenshot_path):
-        with open(screenshot_path, "rb") as f:
-            attachment = base64.b64encode(f.read()).decode()
-
     payload = {
-        "message_id": message_id,
-        "completed": 0,
-        "remark": remark,
-        "e1_look_up": "0",
-        "new_patient_in_pionner": "0",
-        "attachment": attachment
+        "id": api_id,
+        "status": "skipped",
+        "remarks": remarks,
     }
-    log_print(f"[UPDATE API] Sending SKIPPED — {remark}")
+    log_print(f"[UPDATE API] Sending SKIPPED — {remarks}")
     return _call_update_api(payload)
 
 
-def update_success(message_id, e1_look_up="0", new_patient_in_pioneer="0", screenshot_path=None):
+def update_success(api_id, screenshot_path=None):
     """
     Mark Rx as successfully completed.
 
     Args:
-        message_id:            unique Rx identifier from xml_api response
-        e1_look_up:            "1" if E1 lookup ran successfully, else "0"
-        new_patient_in_pioneer: "1" if a new patient was added, else "0"
-        screenshot_path:       path to screenshot PNG to attach (base64-encoded)
+        api_id: record id from prescription API response
 
     Returns:
         bool: True if acknowledged
     """
-    attachment = ""
-    if screenshot_path and os.path.exists(screenshot_path):
-        with open(screenshot_path, "rb") as f:
-            attachment = base64.b64encode(f.read()).decode()
-
     payload = {
-        "message_id": message_id,
-        "completed": 1,
-        "remark": "success",
-        "e1_look_up": e1_look_up,
-        "new_patient_in_pionner": new_patient_in_pioneer,
-        "attachment": attachment
+        "id": api_id,
+        "status": "completed",
+        "remarks": "Drug substituted successfully in PioneerRx",
     }
-    log_print(f"[UPDATE API] Sending SUCCESS")
+    log_print("[UPDATE API] Sending SUCCESS")
     return _call_update_api(payload)
 
 
-def update_failed(message_id, remark="failed"):
+def update_failed(api_id, remarks="failed"):
     """
     Mark Rx as failed due to an exception.
 
     Args:
-        message_id: unique Rx identifier from xml_api response
-        remark:     error description
+        api_id: record id from prescription API response
+        remarks: error description
 
     Returns:
         bool: True if acknowledged
     """
     payload = {
-        "message_id": message_id,
-        "completed": 0,
-        "remark": remark[:500],   # cap length to avoid oversized payloads
-        "e1_look_up": "0",
-        "new_patient_in_pionner": "0",
-        "attachment": ""
+        "id": api_id,
+        "status": "failed",
+        "remarks": remarks[:500],
     }
-    log_print(f"[UPDATE API] Sending FAILED — {remark}")
+    log_print(f"[UPDATE API] Sending FAILED — {remarks}")
     return _call_update_api(payload)

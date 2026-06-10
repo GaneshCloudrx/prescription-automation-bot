@@ -3,6 +3,7 @@ Prescription API Module
 Fetches prescription data from the drug substitution API (POST).
 Includes retry logic with exponential backoff.
 """
+import base64
 import time
 import requests
 import sys
@@ -12,11 +13,30 @@ import config
 from modules.helper import log_print
 
 
+USE_TEST_RESPONSE = False
+
+# TEST_RESPONSE = {
+#     "id": 3728,
+#     "pioneer_rx_number": "1628995",
+#     "original_drug_ndc": "78206012901",
+#     "original_drug_name": "Apri 28 Day Tablet",
+#     "original_drug_dose": "1 ct",
+#     "original_is_compound": False,
+#     "substitute_drug_ndc": "44087111501",
+#     "substitute_drug_name": "Gonal-f RFF Redi-ject Pen 300 IU",
+#     "substitute_drug_dose": "1 ct",
+#     "substitute_is_compound": False,
+#     "substitute_drug_qty": None,
+#     "substitute_drug_sig": None,
+#     "annotation": "Substituted Gonal-f RFF Redi-ject Pen 300 IU  from Apri 28 Day Tablet  per standing order on file",
+# }
+
+
 def _build_auth_header():
     """Build auth header using the pre-configured API_AUTH_HEADER."""
     return {
         "Content-Type": "application/json",
-        "Authorization": config.API_AUTH_HEADER,
+        "Authorization": f"Basic {base64.b64encode(f'{config.PORTAL_USERNAME}:{config.PORTAL_PASSWORD}'.encode()).decode()}",
     }
 
 
@@ -26,16 +46,20 @@ def _parse_response(data):
 
     API response item:
     {
-        "id": 101,
+        "id": 12345,
         "pioneer_rx_number": "RX123456",
-        "original_drug_ndc": "00052031301",
-        "original_drug_name": "Follistim AQ 600 IU",
-        "original_drug_dose": 1,
-        "substitute_drug_ndc": "44087111501",
-        "substitute_drug_name": "Gonal-F 450 IU",
-        "substitute_drug_dose": 2,
-        "sig": "Inject 0.5ml subcutaneously daily",
-        "annotation": "Substituted per physician approval"
+        "original_drug_ndc": "00002143380",
+        "original_drug_name": "Gonal-F",
+        "original_drug_dose": "3",
+        "original_drug_unit": "CT",
+        "original_is_compound": false,
+        "substitute_drug_ndc": "00002143390",
+        "substitute_drug_name": "Follistim",
+        "substitute_is_compound": false,
+        "substitute_drug_dose": "3",
+        "substitute_drug_unit": "ML",
+        "substitute_drug_sig": "Inject 225 IU subcutaneously daily",
+        "annotation": "Substituted Follistim x 3 doses from Gonal-F x 3 doses per standing order on file"
     }
     """
     return {
@@ -43,15 +67,18 @@ def _parse_response(data):
         "rx_number": data.get("pioneer_rx_number", ""),
         "original_drug_ndc": data.get("original_drug_ndc", ""),
         "original_drug_name": data.get("original_drug_name", ""),
-        "original_drug_dose": data.get("original_drug_dose", ""),
+        "original_drug_dose": str(data.get("original_drug_dose", "")),
+        "original_drug_unit": data.get("original_drug_unit", ""),
+        "original_is_compound": bool(data.get("original_is_compound", False)),
         "substitute_drug_ndc": data.get("substitute_drug_ndc", ""),
         "substitute_drug_name": data.get("substitute_drug_name", ""),
         "substitute_drug_dose": str(data.get("substitute_drug_dose", "")),
+        "substitute_drug_unit": data.get("substitute_drug_unit", ""),
+        "substitute_is_compound": bool(data.get("substitute_is_compound", False)),
+        "substitute_drug_sig": data.get("substitute_drug_sig") or "",
         "drug_ndc": data.get("substitute_drug_ndc", ""),
         "drug_name": data.get("substitute_drug_name", ""),
-        "sig": data.get("sig", ""),
-        "annotation": data.get("annotation", ""),
-        "is_compound": bool(data.get("is_compound", False)),
+        "annotation": data.get("annotation") or "",
         "raw_response": data,
     }
 
@@ -66,6 +93,16 @@ def fetch_next_prescription(max_retries=config.MAX_API_RETRIES):
     Raises:
         config.SystemException: If all retry attempts fail with a non-recoverable error.
     """
+    # if USE_TEST_RESPONSE:
+    #     log_print("[PRESCRIPTION API] Using TEST response (not calling API)")
+    #     parsed = _parse_response(TEST_RESPONSE)
+    #     log_print(
+    #         f"[PRESCRIPTION API] Got Rx: {parsed['rx_number']} | "
+    #         f"Substitute: {parsed['substitute_drug_name']} (NDC: {parsed['substitute_drug_ndc']}) | "
+    #         f"Dose: {parsed['substitute_drug_dose']}"
+    #     )
+    #     return parsed
+
     headers = _build_auth_header()
     payload = {
         "server_name": config.MACHINE_NAME,

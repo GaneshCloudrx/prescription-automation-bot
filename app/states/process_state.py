@@ -18,7 +18,7 @@ from modules import (
     app_cache,
     rx_search,
     drugtype_selection, search_drug,
-    drug_quantity, drug_sig,
+    drug_quantity, drug_unit, drug_sig,
     annotation,
     dispense,
     save_and_continue, equivalent_rx,
@@ -59,16 +59,31 @@ def _ensure_pioneer_foreground():
         log_print(f"[PROCESS] Focus recovery warning: {e}")
 
 
+def _click_image_tab():
+    """Click the 'Image [2]' tab on the Edit Rx window to switch from Dispense to Image."""
+    try:
+        app = app_cache.get_pioneer_app()
+        window = app.window(title_re=config.SELECTOR_EDIT_RX_FULL)
+        window.wait("visible", timeout=config.TIMEOUT_ELEMENT_VISIBLE)
+
+        image_tab = window.child_window(title_re="Image.*", control_type="TabItem")
+        image_tab.click_input()
+        time.sleep(1)
+        log_print("[PROCESS] Image tab clicked")
+    except Exception as e:
+        log_print(f"[PROCESS] Failed to click Image tab: {e}")
+
+
 def _handle_popups():
     """Dismiss any popups that may appear after opening an Rx."""
     for handler in [
         priority_window_handle_popup.click_cancel_priority,
-        wizard_add_patient_popup.dismiss_wizard_popup,
-        rxinuse_popup.click_cancel_rxinuse,
-        renewable_request.click_cancel_renew,
-        reminder.click_dismiss_all,
-        converted_data_popup.click_ok_conversion,
-        previous_active_fill_popup.click_cancel_fill,
+        #wizard_add_patient_popup.dismiss_wizard_popup,
+        #rxinuse_popup.click_cancel_rxinuse,
+        #renewable_request.click_cancel_renew,
+        #reminder.click_dismiss_all,
+        #converted_data_popup.click_ok_conversion,
+        #previous_active_fill_popup.click_cancel_fill,
     ]:
         try:
             handler()
@@ -95,9 +110,10 @@ def run(transaction, api_response):
     rx_number = transaction["rx_number"]
     drug_ndc = transaction.get("drug_ndc", "")
     quantity = transaction.get("substitute_drug_dose", "")
-    sig_text = transaction.get("sig", "")
+    unit = transaction.get("substitute_drug_unit", "")
+    sig_text = transaction.get("substitute_drug_sig", "")
     annotation_text = transaction.get("annotation", "")
-    is_compound = transaction.get("is_compound", False)
+    is_compound = transaction.get("substitute_is_compound", False)
     api_id = transaction.get("api_id", "")
 
     log_print("=" * 60)
@@ -152,22 +168,46 @@ def run(transaction, api_response):
             update_sent = True
             raise config.BusinessRuleException(f"Drug not found: NDC {drug_ndc}")
 
-        # ---- Step 5: Set quantity (substitute_drug_dose) ----
-        if quantity:
-            log_print(f"[PROCESS] Setting quantity: {quantity}")
-            drug_quantity.set_quantity(quantity)
+        # ---- Step 5: Set quantity and unit ----
+        if unit and not drug_unit.is_supported_unit(unit):
+            update_api.update_skipped(api_id, f"Unsupported drug unit: {unit}")
+            update_sent = True
+            raise config.BusinessRuleException(f"Unsupported drug unit: {unit}")
 
-        # ---- Step 6: Set SIG ----
-        if sig_text:
+        if drug_unit.is_ct_unit(unit):
+            qty_with_ct = f"{quantity} ct" if quantity else ""
+            if qty_with_ct:
+                log_print(f"[PROCESS] Setting quantity (CT): {qty_with_ct}")
+                drug_quantity.set_quantity(qty_with_ct)
+        else:
+            if quantity:
+                log_print(f"[PROCESS] Setting quantity: {quantity}")
+                drug_quantity.set_quantity(quantity)
+            if unit:
+                log_print(f"[PROCESS] Setting unit: {unit}")
+                unit_success, _ = drug_unit.set_unit(unit)
+                if not unit_success:
+                    raise config.SystemException(f"Failed to set unit: {unit}")
+
+        # ---- Step 6: Set SIG (only if valid value from API) ----
+        if sig_text and sig_text.strip().upper() not in ("", "NA", "N/A"):
             log_print(f"[PROCESS] Setting SIG: {sig_text[:60]}...")
             drug_sig.set_sig(sig_text)
+        else:
+            log_print(f"[PROCESS] Skipping SIG (empty or NA)")
 
-        # ---- Step 7: Add annotation (pencil icon popup) ----
+        # ---- Step 7: Select Pharmacist (RPh) ----
+        log_print(f"[PROCESS] Setting RPh: {config.PHARMACIST_NAME}")
+        dispense.set_rph()
+
+        # ---- Step 8: Switch to Image tab and add annotation ----
         if annotation_text:
+            log_print("[PROCESS] Switching to Image tab...")
+            _click_image_tab()
             log_print(f"[PROCESS] Adding annotation: {annotation_text[:60]}...")
             annotation.add_annotation(annotation_text)
 
-        # ---- Step 8: Save & Continue ----
+        # ---- Step 9: Save & Continue ----
         screenshot_path = take_screenshot("before_save")
 
         if not save_and_continue.click_save_by_config():

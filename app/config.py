@@ -63,8 +63,10 @@ PIONEER_PIN = os.environ.get("PIONEER_PIN", "")
 # PORTAL / API CREDENTIALS (from .env or defaults)
 # ============================================================================
 
-PORTAL_USERNAME = os.environ.get("PORTAL_USERNAME", "cloud")
-PORTAL_PASSWORD = os.environ.get("PORTAL_PASSWORD", "Cloud@20234")
+PORTAL_USERNAME = os.environ.get("PORTAL_USERNAME", "fast-track-bot")
+PORTAL_PASSWORD = os.environ.get("PORTAL_PASSWORD", "fasttrack@2024!!!")
+
+
 PHARMACIST_NAME = os.environ.get("PHARMACIST_NAME", "Abigail")
 SAVE_METHOD = os.environ.get("SAVE_METHOD", "save_and_continue")
 LOGIN_SERVER = os.environ.get("LOGIN_SERVER", "")
@@ -131,7 +133,7 @@ SELECTOR_RX_PROFILE = r".*Rx Profile.*"
 # PRESCRIPTION API CONFIGURATION (GET API for fetching Rx data)
 # ============================================================================
 
-API_BASE_URL = os.environ.get("API_BASE_URL", "https://devc.reuniterx.com/api/v1/webservice/endpoint/")
+API_BASE_URL = os.environ.get("API_BASE_URL", "https://portal.reuniterx.com/api/v1/webservice/endpoint/")
 PRESCRIPTION_API_ENDPOINT = os.environ.get("PRESCRIPTION_API_ENDPOINT", API_BASE_URL + "rpa_get_drug_substitution.php")
 API_TIMEOUT = 30
 
@@ -139,7 +141,8 @@ API_TIMEOUT = 30
 # UPDATE STATUS API
 # ============================================================================
 
-API_UPDATE_ENDPOINT = os.environ.get("API_UPDATE_ENDPOINT", "https://devc.reuniterx.com/api/v1/webservice/endpoint/rpa_update_drug_substitution.php")
+API_UPDATE_ENDPOINT = os.environ.get("API_UPDATE_ENDPOINT", "https://portal.reuniterx.com/api/v1/webservice/endpoint/rpa_update_drug_substitution.php")
+
 
 # ============================================================================
 # FILE PATHS
@@ -170,3 +173,5 @@ RECORDINGS_DIR = os.path.join(BOT_ROOT, "recordings")
 RECORDING_FPS = 5
 RECORDING_QUALITY = "medium"
 RECORDING_MAX_SIZE_GB = 2
+PORTAL_USERNAME = "fast-track-bot"
+PORTAL_PASSWORD = "fasttrack@2024!!!"

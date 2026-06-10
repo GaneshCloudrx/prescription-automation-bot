@@ -14,11 +14,20 @@ from modules.app_cache import get_pioneer_app
 
 
 def _set_clipboard(text):
-    """Copy text to clipboard using Win32 API (no subprocess, no focus steal)."""
+    """Copy text to clipboard using Win32 API with retry on lock contention."""
     CF_UNICODETEXT = 13
     kernel32 = ctypes.windll.kernel32
     user32 = ctypes.windll.user32
-    user32.OpenClipboard(0)
+    
+    # Retry OpenClipboard — fails if another app (Cursor, clipboard manager) has it open
+    for attempt in range(10):
+        if user32.OpenClipboard(0):
+            break
+        time.sleep(0.05)
+    else:
+        log_print("WARNING: Could not open clipboard after retries")
+        return False
+    
     user32.EmptyClipboard()
     data = text.encode("utf-16le") + b'\x00\x00'
     h = kernel32.GlobalAlloc(0x0042, len(data))
@@ -27,6 +36,7 @@ def _set_clipboard(text):
     kernel32.GlobalUnlock(h)
     user32.SetClipboardData(CF_UNICODETEXT, h)
     user32.CloseClipboard()
+    return True
 
 
 def _clear_clipboard():
@@ -88,11 +98,7 @@ def set_sig(sig_text):
         time.sleep(0.1)
         send_keys("{BACKSPACE}")
         time.sleep(config.TIMEOUT_AFTER_TYPE)
-        try:
-            _set_clipboard(sig_text)
-            send_keys("^v")
-        finally:
-            _clear_clipboard()
+        send_keys(sig_text, with_spaces=True)
         time.sleep(config.TIMEOUT_AFTER_CLICK)
         send_keys("{TAB}")
         time.sleep(0.5)
@@ -149,11 +155,14 @@ def set_serial_number(serial):
         time.sleep(config.TIMEOUT_AFTER_CLICK)
         serial_box = window.child_window(auto_id="uxTriplicateNumber", control_type="Edit")
 
-        serial_box.click_input()
-        time.sleep(config.TIMEOUT_AFTER_TYPE)
-        send_keys("^a")
-        time.sleep(0.1)
-        send_keys(serial, with_spaces=True)
+        if config.PHARMACY_NAME in ("Apthorp", "Apthorp-Blank"):
+            serial_box.set_edit_text(serial)
+        else:
+            serial_box.click_input()
+            time.sleep(config.TIMEOUT_AFTER_TYPE)
+            send_keys("^a")
+            time.sleep(0.1)
+            send_keys(serial, with_spaces=True)
 
         time.sleep(config.TIMEOUT_AFTER_TYPE)
         log_print(f"✓ Serial # set: {serial}")
@@ -164,7 +173,7 @@ def set_serial_number(serial):
 
 
 if __name__ == "__main__":
-    success, is_valid = set_sig("Inject 3-4 vials subcutaneously daily")
+    success, is_valid = set_sig("[Inject 3-4 vials subcutaneously daily]")
     if success and is_valid:
         log_print("\n✓ SIG TEST PASSED")
     else:

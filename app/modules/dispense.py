@@ -95,6 +95,51 @@ def set_dispense(quantity, days_supply, rph):
         return False, False
 
 
+def set_rph(rph=None):
+    """
+    Select the pharmacist (RPh) in the RPh ComboBox on the Edit Rx window.
+    Uses config.PHARMACIST_NAME if no rph argument is provided.
+
+    Returns:
+        bool: True if RPh set successfully
+    """
+    global _app
+    _app = None
+
+    if not rph:
+        rph = config.PHARMACIST_NAME
+    if not rph:
+        log_print("[DISPENSE] No pharmacist name configured — skipping RPh")
+        return True
+
+    if not connect_to_pioneer():
+        return False
+
+    try:
+        window = _app.window(title_re=config.SELECTOR_EDIT_RX_FULL)
+        window.wait('visible', timeout=config.TIMEOUT_ELEMENT_VISIBLE)
+        window.set_focus()
+        time.sleep(config.TIMEOUT_AFTER_CLICK)
+
+        rph_combo = window.child_window(title="RPh:", control_type="ComboBox")
+        rph_edit = rph_combo.child_window(auto_id="1001", control_type="Edit")
+        rph_edit.click_input()
+        time.sleep(config.TIMEOUT_AFTER_TYPE)
+        send_keys("{END}+{HOME}{DELETE}")
+        time.sleep(config.TIMEOUT_AFTER_TYPE)
+        send_keys(str(rph), with_spaces=True)
+        time.sleep(config.TIMEOUT_AFTER_CLICK)
+        send_keys("{DOWN}{TAB}")
+        time.sleep(config.TIMEOUT_AFTER_CLICK)
+
+        log_print(f"[DISPENSE] RPh set to: {rph}")
+        return True
+
+    except Exception as e:
+        log_print(f"[DISPENSE] Failed to set RPh: {e}")
+        return False
+
+
 def clear_secondary_insurance():
     """Set Secondary insurance to <None> to resolve Third Party errors."""
     global _app
