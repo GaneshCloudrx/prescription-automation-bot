@@ -6,9 +6,9 @@ Use GitHub as the source of truth and let each VM refresh `app\` locally before 
 
 This keeps the current folder structure and preserves:
 
-- `C:\Bots\CloudRxDE\config\.env`
+- `C:\Prescription Automation Bot\config\.env`
 - local runtime folders outside `app\`
-- the existing `CloudRxDEBot` logon trigger model
+- the existing `PrescriptionBot` logon trigger model
 
 ## One-Time Setup On Each VM
 
@@ -16,14 +16,14 @@ Requirements:
 
 - Git is installed and available in `PATH`
 - Python is already installed on each VM
-- `C:\Bots\CloudRxDE\config\.env` already exists
-- `C:\Bots\CloudRxDE\config\.env` should include `GITHUB_TOKEN=<read-only token>` for private repos
+- `C:\Prescription Automation Bot\config\.env` already exists
+- `C:\Prescription Automation Bot\config\.env` should include `GITHUB_TOKEN=<read-only token>` for private repos
 - AutoLogon is already configured for the bot Windows account
 
 Register the bot task:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "C:\Bots\CloudRxDE\deploy\register_task.ps1" -UserName "localadmin" -PythonExe "C:\Users\localadmin\AppData\Local\Programs\Python\Python313\python.exe"
+powershell -ExecutionPolicy Bypass -File "C:\Prescription Automation Bot\deploy\register_task.ps1" -UserName "localadmin" -PythonExe "C:\Users\localadmin\AppData\Local\Programs\Python\Python313\python.exe"
 ```
 
 What this does now:
@@ -44,16 +44,16 @@ What this does now:
 Run:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File "C:\Bots\CloudRxDE\deploy\update_from_git.ps1" -PythonExe "C:\Users\localadmin\AppData\Local\Programs\Python\Python313\python.exe" -RestartBotTask
+powershell -ExecutionPolicy Bypass -File "C:\Prescription Automation Bot\deploy\update_from_git.ps1" -PythonExe "C:\Users\localadmin\AppData\Local\Programs\Python\Python313\python.exe" -RestartBotTask
 ```
 
 ## Notes
 
-- The updater uses `https://github.com/GaneshCloudrx/cloudrx-dataentry-bot.git`
+- The updater uses `https://github.com/GaneshCloudrx/prescription-automation-bot.git`
 - For private repos, the updater reads `GITHUB_TOKEN` from `config\.env` or the VM environment
 - The updater does a fresh clone of the latest branch into `deploy\repo-cache` on each run
 - `app\` is refreshed from GitHub
 - `config\.env` is never pulled from GitHub
-- The updater keeps a backup copy in `C:\Bots\CloudRxDE\backup\app_previous`
-- The last deployed commit is written to `C:\Bots\CloudRxDE\runtime\version.txt`
-- Update logs are appended to `C:\Bots\CloudRxDE\logs\git-update.log`
+- The updater keeps a backup copy in `C:\Prescription Automation Bot\backup\app_previous`
+- The last deployed commit is written to `C:\Prescription Automation Bot\runtime\version.txt`
+- Update logs are appended to `C:\Prescription Automation Bot\logs\git-update.log`

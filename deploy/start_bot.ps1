@@ -1,8 +1,8 @@
 param(
-    [string]$BotRoot = "C:\Bots\CloudRxDE",
+    [string]$BotRoot = "C:\Prescription Automation Bot",
     [string]$PythonExe = "python",
-    [string]$RepoUrl = "https://github.com/GaneshCloudrx/cloudrx-dataentry-bot.git",
-    [string]$Branch = "main"
+    [string]$RepoUrl = "https://github.com/GaneshCloudrx/prescription-automation-bot.git",
+    [string]$Branch = "dev"
 )
 
 $ErrorActionPreference = "Stop"

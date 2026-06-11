@@ -1,9 +1,9 @@
 param(
-    [string]$RepoUrl = "https://github.com/GaneshCloudrx/cloudrx-dataentry-bot.git",
-    [string]$Branch = "main",
-    [string]$BotRoot = "C:\Bots\CloudRxDE",
+    [string]$RepoUrl = "https://github.com/GaneshCloudrx/prescription-automation-bot.git",
+    [string]$Branch = "dev",
+    [string]$BotRoot = "C:\Prescription Automation Bot",
     [string]$PythonExe = "python",
-    [string]$TaskName = "CloudRxDEBot",
+    [string]$TaskName = "PrescriptionBot",
     [string]$GitHubToken,
     [switch]$RestartBotTask
 )

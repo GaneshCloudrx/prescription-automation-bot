@@ -1,4 +1,4 @@
-$dir = "C:\Bots\CloudRxDE\recordings"
+$dir = "C:\Prescription Automation Bot\recordings"
 $files = Get-ChildItem $dir
 $sum = ($files | Measure-Object -Property Length -Sum).Sum
 $mb = [math]::Round($sum / 1MB, 1)
