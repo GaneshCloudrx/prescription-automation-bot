@@ -124,8 +124,8 @@ MAX_API_RETRIES = 3
 SELECTOR_LOGIN = r".*Logon to PioneerRx.*"
 SELECTOR_MAIN = r".*(MainForm|Fill Requests).*"
 SELECTOR_FILL_REQUESTS = r".*(Fill Requests|Rx Profile|MainForm).*"
-SELECTOR_EDIT_RX = r".*(Edit|Fill Rx).*"
-SELECTOR_EDIT_RX_FULL = r".*(Edit|Fill Rx|Fill Requests|Search for|Alerts).*"
+SELECTOR_EDIT_RX = r".*(Rx Profile|Edit|Fill Rx).*"
+SELECTOR_EDIT_RX_FULL = r".*(Rx Profile|Edit|Fill Rx|Fill Requests|Search for|Alerts).*"
 SELECTOR_SEARCH_DRUG = r".*Search for a Prescription Item.*"
 SELECTOR_RX_PROFILE = r".*Rx Profile.*"
 
