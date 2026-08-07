@@ -5,6 +5,7 @@ import os
 import csv
 import time
 import queue
+import base64
 import ctypes
 import threading
 import subprocess
@@ -16,8 +17,66 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 
 log_file = None
+log_csv_writer = None
 screen_recorder = None
 log_queue_manager = None
+
+
+# ── Log Levels ────────────────────────────────────────────────────────────────
+# TRACE : low-level step traces (window opened, waiting, clicked) — local only
+# INFO  : meaningful business info (Rx number, drug found, API response)
+# WARN  : recoverable issues (drug not found, UI element missing)
+# ERROR : errors that fail the current transaction
+# FATAL : unrecoverable failures (Pioneer crash, API down)
+LOG_LEVELS = {"TRACE": 0, "INFO": 1, "WARN": 2, "ERROR": 3, "FATAL": 4}
+_LEVEL_ALIASES = {"WARNING": "WARN", "CRITICAL": "FATAL", "DEBUG": "TRACE", "VERBOSE": "TRACE"}
+DEFAULT_LOG_LEVEL = "TRACE"
+
+
+def normalize_level(level):
+    """Return a canonical level name (or None if unrecognised)."""
+    if not level:
+        return None
+    lvl = str(level).strip().upper()
+    lvl = _LEVEL_ALIASES.get(lvl, lvl)
+    return lvl if lvl in LOG_LEVELS else None
+
+
+_FATAL_KEYWORDS = (
+    "crash", "unrecoverable", "traceback", "fatal", "restarting server",
+    "attempts failed", "failed to connect", "cannot connect", "app not running",
+)
+_WARN_KEYWORDS = (
+    "not found", "couldn't find", "could not find",
+    "not populated", "no rows", "mismatch", "skipped", "skipping",
+    "unable to", "warning",
+)
+_ERROR_KEYWORDS = ("exception", "error", "failed")
+_INFO_KEYWORDS = (
+    "[update api]", "success", "completed", "processing:", "drug found",
+    "sig set", "quantity", "annotation", "[process]",
+)
+
+
+def infer_level(message):
+    """Best-effort log level from message content when none is supplied."""
+    m = str(message).lower()
+    if any(k in m for k in _FATAL_KEYWORDS):
+        return "FATAL"
+    if any(k in m for k in _INFO_KEYWORDS):
+        return "INFO"
+    if any(k in m for k in _WARN_KEYWORDS):
+        return "WARN"
+    if any(k in m for k in _ERROR_KEYWORDS):
+        return "ERROR"
+    return DEFAULT_LOG_LEVEL
+
+
+def should_send_to_api(level):
+    """True if a log at *level* should be sent to the portal API."""
+    lvl = LOG_LEVELS.get(normalize_level(level) or DEFAULT_LOG_LEVEL, 0)
+    minimum = LOG_LEVELS.get(normalize_level(config.API_LOG_MIN_LEVEL) or "INFO", 1)
+    return lvl >= minimum
 
 
 # ── Async API Log Queue ─────────────────────────────────────────────────────
@@ -63,11 +122,11 @@ class LogQueueManager:
         except Exception:
             pass
 
-    def add_log(self, timestamp, message):
+    def add_log(self, timestamp, message, level="INFO"):
         if not config.API_LOG_ENABLED:
             return
         try:
-            self.queue.put_nowait({"timestamp": timestamp, "message": message})
+            self.queue.put_nowait({"timestamp": timestamp, "message": message, "level": level})
         except queue.Full:
             pass
 
@@ -106,12 +165,18 @@ class LogQueueManager:
             payload = {
                 "bot_name": config.BOT_NAME,
                 "server_name": config.MACHINE_NAME,
-                "logs": [{"timestamp": l["timestamp"], "message": l["message"]} for l in self.batch],
+                "logs": [
+                    {"timestamp": l["timestamp"], "level": l.get("level", "INFO"), "message": l["message"]}
+                    for l in self.batch
+                ],
             }
+            auth_string = base64.b64encode(
+                f"{config.PORTAL_USERNAME}:{config.PORTAL_PASSWORD}".encode()
+            ).decode()
             resp = requests.post(
                 config.API_LOG_ENDPOINT,
                 json=payload,
-                headers={"Content-Type": "application/json", "Authorization": config.API_AUTH_HEADER},
+                headers={"Content-Type": "application/json", "Authorization": f"Basic {auth_string}"},
                 timeout=config.API_TIMEOUT,
             )
             if resp.status_code != 200:
@@ -121,9 +186,9 @@ class LogQueueManager:
 
     def _write_error_to_log_file(self, error_message):
         try:
-            if log_file:
+            if log_csv_writer:
                 ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                log_file.write(f"{ts} - [LOG QUEUE ERROR] {error_message}\n")
+                log_csv_writer.writerow([ts, f"[LOG QUEUE ERROR] {error_message}", "ERROR"])
                 log_file.flush()
         except Exception:
             pass
@@ -133,63 +198,92 @@ class LogQueueManager:
             return
         try:
             with open(self.last_sent_line_file, "r") as f:
-                last_sent_line = int(f.read().strip())
+                last_sent_row = int(f.read().strip())
         except Exception:
-            last_sent_line = 0
-        date_str = datetime.now().strftime("%Y-%m-%d")
-        log_path = os.path.join(config.LOGS_DIR, f"log_{date_str}.txt")
+            last_sent_row = 0
+        log_path = _server_log_path()
         if not os.path.exists(log_path):
             return
         try:
-            with open(log_path, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-            new_lines = lines[last_sent_line:]
-            if not new_lines:
-                return
+            with open(log_path, "r", newline="", encoding="utf-8") as f:
+                rows = list(csv.reader(f))
+            data_rows = rows[1:] if rows and rows[0][:1] == ["Timestamp"] else rows
+            new_rows = data_rows[last_sent_row:]
             batch = []
-            for line in new_lines:
-                parts = line.split(" - ", 1)
-                if len(parts) == 2:
-                    batch.append({"timestamp": parts[0].strip(), "message": parts[1].strip()})
+            for row in new_rows:
+                if len(row) < 3:
+                    continue
+                ts, msg, level = row[0].strip(), row[1], row[2].strip().upper()
+                if level not in LOG_LEVELS:
+                    level = "INFO"
+                if not should_send_to_api(level):
+                    continue
+                batch.append({"timestamp": ts, "level": level, "message": msg})
             if batch:
                 for i in range(0, len(batch), config.API_LOG_BATCH_SIZE):
                     self.batch = batch[i : i + config.API_LOG_BATCH_SIZE]
                     self._send_batch_to_api()
                     self.batch = []
                     time.sleep(0.1)
-                with open(self.last_sent_line_file, "w") as f:
-                    f.write(str(len(lines)))
+            with open(self.last_sent_line_file, "w") as f:
+                f.write(str(len(data_rows)))
         except Exception as e:
             self._write_error_to_log_file(f"Error sending missed logs: {e}")
 
 
 # ── Local File Logging ───────────────────────────────────────────────────────
 
+LOG_CSV_HEADER = ["Timestamp", "Message", "Level"]
+
+
+def _server_log_path(date_str=None):
+    """Path of today's server log CSV: logs/bot_logs_<YYYY-MM-DD>.csv."""
+    date_str = date_str or datetime.now().strftime("%Y-%m-%d")
+    return os.path.join(config.LOGS_DIR, f"bot_logs_{date_str}.csv")
+
+
 def init_log_file():
-    """Open (append) a date-stamped log file inside logs/."""
-    global log_file
+    """Open (append) a per-day CSV log file (Timestamp, Message, Level) in logs/."""
+    global log_file, log_csv_writer
     os.makedirs(config.LOGS_DIR, exist_ok=True)
-    date_str = datetime.now().strftime("%Y-%m-%d")
-    path = os.path.join(config.LOGS_DIR, f"log_{date_str}.txt")
-    log_file = open(path, "a", encoding="utf-8")
+    path = _server_log_path()
+    write_header = (not os.path.exists(path)) or os.path.getsize(path) == 0
+    log_file = open(path, "a", newline="", encoding="utf-8")
+    log_csv_writer = csv.writer(log_file)
+    if write_header:
+        log_csv_writer.writerow(LOG_CSV_HEADER)
+        log_file.flush()
 
 
 def close_log_file():
-    global log_file
+    global log_file, log_csv_writer
     if log_file:
         log_file.close()
         log_file = None
+    log_csv_writer = None
 
 
-def log_print(message):
-    """Print to console + write to log file + queue to API."""
-    print(message)
+def log_print(message, level=None):
+    """Print to console + write to local CSV log (ALL levels) +
+    queue to the portal API (only levels >= config.API_LOG_MIN_LEVEL).
+
+    Args:
+        message: text to log.
+        level:   TRACE / INFO / WARN / ERROR / FATAL. When omitted, the level is
+                 inferred from the message content. TRACE logs stay on the server
+                 only and are never sent to the portal.
+    """
+    resolved = normalize_level(level) or infer_level(message)
+    print(f"[{resolved}] {message}")
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    if log_file:
-        log_file.write(f"{ts} - {message}\n")
-        log_file.flush()
-    if log_queue_manager:
-        log_queue_manager.add_log(ts, message)
+    if log_csv_writer:
+        try:
+            log_csv_writer.writerow([ts, message, resolved])
+            log_file.flush()
+        except Exception:
+            pass
+    if log_queue_manager and should_send_to_api(resolved):
+        log_queue_manager.add_log(ts, message, resolved)
 
 
 # ── API Log Queue Init / Cleanup ─────────────────────────────────────────────

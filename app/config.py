@@ -156,11 +156,11 @@ RETRY_FILE_PATH = os.path.join(BOT_ROOT, "data", f"retry_{datetime.now().strftim
 # API LOGGING
 # ============================================================================
 
-API_AUTH_HEADER = "Basic Y2xvdWQxOkNsb3VkQDIwMjY="
 API_LOG_ENABLED = True
-API_LOG_ENDPOINT = "https://devc.reuniterx.com/api/v1/webservice/endpoint/rpa_get_bot_status.php"
+API_LOG_ENDPOINT = API_BASE_URL + "rpa_get_bot_status.php"
 API_LOG_BATCH_SIZE = 10
 API_LOG_BATCH_INTERVAL = 5
+API_LOG_MIN_LEVEL = "INFO"
 
 HEARTBEAT_URL = "https://portal.reuniterx.com/api/v1/webservice/endpoint/rpa_get_bot_status.php"
 HEARTBEAT_BOT_NAME = "PrescriptionAutomationBot"

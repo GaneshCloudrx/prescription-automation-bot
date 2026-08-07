@@ -17,7 +17,7 @@ from modules.helper import log_print, take_screenshot, force_foreground, ensure_
 from modules import (
     app_cache,
     rx_search,
-    drugtype_selection, search_drug,
+    drugtype_selection, search_drug, drug_selection_direct,
     drug_quantity, drug_unit, drug_sig,
     annotation,
     dispense,
@@ -157,7 +157,9 @@ def run(transaction, api_response):
         drugtype_selection.select_drug_type(is_compound=is_compound)
 
         _ensure_pioneer_foreground()
-        drug_success, drug_found = search_drug.search_drug(drug_ndc)
+        drug_success, drug_found = drug_selection_direct.search_drug_direct(
+            drug_ndc, is_compound=is_compound
+        )
 
         if not drug_success:
             _add_to_retry(rx_number)
