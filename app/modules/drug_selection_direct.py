@@ -103,21 +103,48 @@ def search_drug_direct(ndc, is_compound=False):
         window.set_focus()
         time.sleep(config.TIMEOUT_AFTER_CLICK)
 
-        # Step 1: Type the NDC / compound text into the Item box
         item_box = window.child_window(auto_id=ITEM_AUTO_ID, control_type="Edit")
+
+        # Read existing drug content before clearing
+        existing_drug = (item_box.get_value() or "").strip()
+        if existing_drug:
+            log_print(f"[DIRECT] Existing drug in textbox: '{existing_drug}'", level="INFO")
+
+        # Clear the drug textbox — try multiple approaches
         item_box.click_input()
         time.sleep(config.TIMEOUT_AFTER_TYPE)
-        send_keys("{END}+{HOME}{DELETE}")
-        time.sleep(config.TIMEOUT_AFTER_TYPE)
+
+        cleared = False
+        for clear_attempt in range(3):
+            # Home → Shift+End → Delete to select all and clear
+            send_keys("{HOME}+{END}")
+            time.sleep(0.1)
+            send_keys("{DELETE}")
+            time.sleep(0.3)
+
+            # Verify the field is now empty
+            current_value = (item_box.get_value() or "").strip()
+            if not current_value:
+                cleared = True
+                break
+
+            log_print(f"[DIRECT] Clear attempt {clear_attempt + 1}/3 — field still has: '{current_value}'", level="WARN")
+            time.sleep(0.3)
+
+        if not cleared:
+            log_print("[DIRECT] ✗ Could not clear drug textbox after retries — skipping", level="ERROR")
+            return False, False
+
+        # Type the new NDC
         send_keys(search_text, with_spaces=True)
         time.sleep(config.TIMEOUT_AFTER_TYPE)
         log_print(f"[DIRECT] Typed into Item box: '{search_text}'")
 
-        # Step 2: First Enter — Pioneer shows the matching item list
+        # First Enter — Pioneer shows the matching item list
         send_keys("{ENTER}")
         time.sleep(1)
 
-        # Step 3: Second Enter to select the highlighted item
+        # Second Enter to select the highlighted item
         send_keys("{ENTER}")
         time.sleep(1)
         expiry = _read_expiry_date()
@@ -131,17 +158,21 @@ def search_drug_direct(ndc, is_compound=False):
             time.sleep(1)
             expiry = _read_expiry_date()
 
-        # Decide found / not-found from the Expire date
-        drug_name = _read_drug_field()
+        # Verify the drug actually changed (not still the old one)
+        new_drug = _read_drug_field()
+        if expiry and new_drug and existing_drug and new_drug == existing_drug:
+            log_print(f"[DIRECT] ✗ Drug field unchanged after substitution (still '{new_drug}') — failed", level="ERROR")
+            return False, False
+
         if expiry:
-            log_print(f"[DIRECT] ✓ Drug found — Expire: '{expiry}' | Item: '{drug_name}'")
+            log_print(f"[DIRECT] ✓ Drug found — Expire: '{expiry}' | Item: '{new_drug}'", level="INFO")
             return True, True
 
-        log_print(f"[DIRECT] ✗ Drug not found — Expire date empty after retries | Item: '{drug_name}'")
+        log_print(f"[DIRECT] ✗ Drug not found — Expire date empty after retries | Item: '{new_drug}'", level="WARN")
         return True, False
 
     except Exception as e:
-        log_print(f"[DIRECT] Failed direct drug selection: {e}")
+        log_print(f"[DIRECT] Failed direct drug selection: {e}", level="ERROR")
         return False, False
 
 
