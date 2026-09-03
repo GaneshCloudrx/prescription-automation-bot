@@ -4,7 +4,8 @@ Handles the Error/Warning List window that may appear after Save & Continue.
 Returns (passed, non_bypassable) so the caller can decide next steps.
 """
 import time
-from pywinauto.application import Application
+from pywinauto import Desktop
+from pywinauto.keyboard import send_keys
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
@@ -122,34 +123,100 @@ def extract_error_list():
         return ""
 
 
-def handle_alerts_popup():
+def _find_alerts_window():
     """
-    Handle the optional Alerts popup that may appear after saving.
-    Clicks Save & Continue (uxSaveContinue) if the window is found.
-    Returns True always (popup is optional).
+    Locate the Alerts window. It is nested inside the Fill Rx / Edit Rx window,
+    so it cannot be reached with a top-level connect by title.
+
+    Returns:
+        WindowSpecification or None if the popup is not present.
     """
     try:
-        app = Application(backend="uia").connect(title_re=".*Alerts.*", timeout=config.TIMEOUT_POPUP_CHECK)
-        alerts_win = app.window(title_re=".*Alerts -.*")
-        alerts_win.wait("visible", timeout=config.TIMEOUT_POPUP_CHECK)
-        try:
-            captcha_label = alerts_win.child_window(auto_id="uxConfirmCharacters", control_type="Text")
-            if captcha_label.exists(timeout=1):
-                captcha_text = captcha_label.window_text().strip()
-                captcha_input = alerts_win.child_window(auto_id="uxConfirmationCharacters", control_type="Edit")
-                captcha_input.set_edit_text(captcha_text)
-                time.sleep(0.3)
-                log_print(f"✓ Alerts captcha filled: '{captcha_text}'")
-        except Exception:
-            pass
+        parent = _app.window(title_re=config.SELECTOR_EDIT_RX_FULL)
+        alerts_win = parent.child_window(title_re=r"Alerts -.*", control_type="Window")
+        if alerts_win.exists(timeout=config.TIMEOUT_ELEMENT_EXISTS):
+            return alerts_win
+    except Exception as e:
+        log_print(f"[ALERTS] Nested window lookup failed: {e}")
 
+    try:
+        alerts_win = Desktop(backend="uia").window(title_re=r"Alerts -.*")
+        if alerts_win.exists(timeout=config.TIMEOUT_POPUP_CHECK):
+            log_print("[ALERTS] Found Alerts window at top level")
+            return alerts_win
+    except Exception as e:
+        log_print(f"[ALERTS] Top-level window lookup failed: {e}")
+
+    return None
+
+
+def _fill_alerts_captcha(alerts_win):
+    """Copy the confirmation characters into the input box when the captcha is shown."""
+    try:
+        captcha_label = alerts_win.child_window(auto_id="uxConfirmCharacters", control_type="Text")
+        if not captcha_label.exists(timeout=1):
+            return
+        captcha_text = captcha_label.window_text().strip()
+        captcha_input = alerts_win.child_window(auto_id="uxConfirmationCharacters", control_type="Edit")
+        captcha_input.set_edit_text(captcha_text)
+        time.sleep(0.3)
+        log_print(f"✓ Alerts captcha filled: '{captcha_text}'")
+    except Exception as e:
+        log_print(f"[ALERTS] Captcha step skipped: {e}")
+
+
+def _save_continue_alerts(alerts_win):
+    """
+    Trigger Save & Continue on the Alerts popup.
+    Clicks the uxSaveContinue button, falling back to the F12 shortcut.
+
+    Returns:
+        bool: True if either action was performed.
+    """
+    try:
         save_btn = alerts_win.child_window(auto_id="uxSaveContinue", control_type="Button")
         save_btn.wait("enabled", timeout=config.TIMEOUT_ELEMENT_EXISTS)
         save_btn.click_input()
         log_print("✓ Alerts popup — Save & Continue clicked")
+        return True
+    except Exception as e:
+        log_print(f"[ALERTS] Save & Continue button not clickable: {e}")
+
+    try:
+        alerts_win.set_focus()
+        time.sleep(config.TIMEOUT_AFTER_CLICK)
+        send_keys("{F12}")
+        log_print("✓ Alerts popup — Save & Continue (F12) pressed")
+        return True
+    except Exception as e:
+        log_print(f"[ALERTS] F12 fallback failed: {e}")
+        return False
+
+
+def handle_alerts_popup():
+    """
+    Handle the optional Alerts popup that may appear after saving.
+    Returns True always (popup is optional).
+    """
+    global _app
+
+    if not connect_to_pioneer():
+        return True
+
+    try:
+        alerts_win = _find_alerts_window()
+        if alerts_win is None:
+            log_print("[ALERTS] Alerts popup not found")
+            return True
+
+        log_print("[ALERTS] Alerts popup detected")
+        _fill_alerts_captcha(alerts_win)
+        _save_continue_alerts(alerts_win)
         time.sleep(0.5)
-    except Exception:
-        pass
+    except Exception as e:
+        log_print(f"[ALERTS] Error handling Alerts popup: {e}")
+        _app = None
+
     return True
 
 
