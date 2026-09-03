@@ -29,10 +29,10 @@ def connect_to_pioneer():
 
 def click_save_and_continue():
     """
-    Click the Save & Continue button (auto_id: uxSave) on the Edit Rx window.
+    Save and continue using the F12 keyboard shortcut on the Edit Rx window.
 
     Returns:
-        bool: True if clicked successfully, False otherwise
+        bool: True if the shortcut was sent successfully, False otherwise
     """
     global _app
     _app = None
@@ -43,21 +43,17 @@ def click_save_and_continue():
     try:
         window = _app.window(title_re=config.SELECTOR_EDIT_RX_FULL)
         window.wait('visible', timeout=config.TIMEOUT_ELEMENT_VISIBLE)
+        window.set_focus()
+        time.sleep(config.TIMEOUT_AFTER_CLICK)
 
-        save_btn = window.child_window(
-            auto_id="uxSave",
-            title="Save & Continue - F12",
-            control_type="Button"
-        )
-        save_btn.wait("enabled", timeout=config.TIMEOUT_ELEMENT_EXISTS)
-        save_btn.click_input()
-        log_print("✓ Save & Continue clicked")
+        send_keys("{F12}")
+        log_print("✓ Save & Continue (F12) pressed")
         time.sleep(1)
 
         return True
 
     except Exception as e:
-        log_print(f"Failed to save and continue: {e}")
+        log_print(f"Failed to send Save & Continue shortcut: {e}")
         _app = None
         return False
 
